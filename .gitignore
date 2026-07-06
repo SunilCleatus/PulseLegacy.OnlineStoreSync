@@ -1,0 +1,10 @@
+bin/
+obj/
+Logs/*.log
+publish/
+*.user
+
+# Never commit real credentials — deploy appsettings.json manually per client.
+# The template with placeholders IS committed; uncomment the next line if this
+# repo will ever hold a real key:
+# appsettings.json
