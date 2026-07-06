@@ -59,8 +59,11 @@ public sealed class LegacyItemReader
                 ic.mrp                                  AS original_price,
                 ic.active                               AS is_active
             FROM dbo.fa_ol_items oi
+            -- Join by item_code STRING, not item_no: in real legacy databases the app
+            -- populates fa_ol_items.item_code and leaves item_no at its newid() default,
+            -- so a GUID join matches nothing (verified: 0 vs 1152 rows on dmbzr2627).
             INNER JOIN dbo.fa_item_codes ic
-                ON ic.item_no = oi.item_no
+                ON ic.item_code = oi.item_code
             LEFT JOIN dbo.fa_item_master im
                 ON  im.item_no     = ic.item_no
                 AND im.godown_code = @DefaultGodown
