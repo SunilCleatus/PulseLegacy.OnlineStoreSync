@@ -21,9 +21,11 @@ Standalone console utility that syncs the legacy ERP's online-store item selecti
    `uploaded_stock`, `uploaded_mrp`, `uploaded_rate`, `updatedon = GETDATE()`.
    Failed products are **not** marked.
 
-Field mapping: `erp_id`=`item_code`, `name`=`item_name`, `track_quantity`=true,
+Field mapping: `erp_id`=`item_code`, `track_quantity`=true,
 `unit_quantity`=stock, `selling_price`=`retail_rate`, `original_price`=`mrp`,
 `is_active`=`active`.
+**`name` is deliberately NOT sent** — the customer maintains product names in the
+online store, and Zepio only updates fields present in the payload.
 
 ## 1. Edit appsettings.json
 

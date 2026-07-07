@@ -180,9 +180,10 @@ public sealed class SyncRunner
 
         foreach (var row in rows)
         {
+            // NOTE: item_name is NOT validated or sent — the customer maintains product
+            // names in the online store; the sync must not overwrite them.
             string? reason =
                 string.IsNullOrWhiteSpace(row.ErpId)  ? "missing item_code" :
-                string.IsNullOrWhiteSpace(row.Name)   ? "missing item_name" :
                 row.SellingPrice <= 0                 ? $"selling_price {row.SellingPrice} <= 0" :
                 row.OriginalPrice < 0                 ? $"original_price {row.OriginalPrice} < 0" :
                 null;
@@ -209,7 +210,6 @@ public sealed class SyncRunner
             products.Add(new ZepioProductDto
             {
                 ErpId         = row.ErpId,
-                Name          = row.Name,
                 TrackQuantity = true,
                 UnitQuantity  = qty,
                 SellingPrice  = row.SellingPrice,

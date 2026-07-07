@@ -11,8 +11,9 @@ public sealed class ZepioProductDto
     [JsonPropertyName("erp_id")]
     public string ErpId { get; set; } = string.Empty;
 
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = string.Empty;
+    // "name" is deliberately NOT sent: the customer maintains product names in the
+    // online store itself; the sync must not overwrite them. (Zepio updates only
+    // the fields present in the payload.)
 
     [JsonPropertyName("track_quantity")]
     public bool TrackQuantity { get; set; } = true;
