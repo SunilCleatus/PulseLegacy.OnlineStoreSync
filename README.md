@@ -42,7 +42,8 @@ online store, and Zepio only updates fields present in the payload.
     "TimeoutSeconds": 60
   },
   "Sync": {
-    "PeriodId": 202627,
+    "AutoDetectPeriod": true,
+    "PeriodId": 18,
     "SendNegativeStockAsZero": true,
     "UpdateFaOlItemsAfterSuccess": true,
     "DryRun": true
@@ -54,8 +55,12 @@ online store, and Zepio only updates fields present in the payload.
 - `ApiKey` — the Zepio Bearer token. **Only lives in this file, never in code.**
   If the key was ever shared in a document/email, ask Zepio to regenerate it.
 - `BranchId` — Zepio branch (default 1).
-- `PeriodId` — the current ERP period (e.g. `202627`). **Must be updated when the
-  period changes** (auto-detection is planned for a later version).
+- `AutoDetectPeriod` — **when `true` (recommended), the current period is read
+  automatically from `fa_periods`** (the row whose date range contains today /
+  `period_status = 'Open'`), so you never edit config at year-end. A wrong period
+  silently sends **stock = 0**, so auto-detect is the safe default.
+- `PeriodId` — used only when `AutoDetectPeriod` is `false`; also the fallback if
+  auto-detect finds no period.
 - `DryRun` — ships as `true` on purpose; see next section.
 
 ## 2. Test with DryRun first
@@ -69,6 +74,10 @@ PulseLegacy.OnlineStoreSync.exe
 
 Check `Logs\sync-YYYYMMDD.log`: item count, batches, full JSON payloads, skipped rows.
 When the payload looks right, set `"DryRun": false`.
+
+The exact payload of each run (every product, including `unit_quantity`) is also saved
+to `Logs\request-YYYYMMDD-HHmmss.json` — the **newest 3** are kept automatically. Open
+the latest one to confirm what was sent (or hand it to Zepio support if stock looks off).
 
 ## 3. Run manually
 
@@ -124,7 +133,8 @@ visible without opening the log.
 | Symptom | Check |
 |---|---|
 | `No default godown found` | `SELECT * FROM fa_godown_master WHERE default_godown = 1` |
-| 0 rows read | `fa_ol_items` empty, or wrong `PeriodId` for `fa_item_master` |
+| 0 rows read | `fa_ol_items` empty (nothing selected for the online store in the ERP) |
+| Stock all zeros | Wrong period → the `fa_item_master` join misses. With `AutoDetectPeriod: true` this is handled automatically; if `false`, `PeriodId` is stale. Check `Logs\request-*.json`. |
 | HTTP 401 | Wrong/expired `ApiKey` |
 | `Product not found for erp_id …` | The product doesn't exist in Zepio for that branch — the API only **updates** existing products, it never creates them |
 | Stock looks wrong | Confirm `PeriodId` and that the default godown is the stock godown |
