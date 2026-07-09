@@ -215,12 +215,32 @@ public sealed class SyncRunner
 
         foreach (var row in rows)
         {
+            // Per-item overrides from fa_ol_items: a fixed value (> 0) wins over the live
+            // figure, so fluctuating items (vegetables, ready-to-cook) can show a steady
+            // stock/price online. 0 means "not fixed — use the live value".
+
+            // Stock: fixed wins; otherwise live stock (with negative→0 per config).
+            decimal qty;
+            if (row.FixedStock > 0)
+            {
+                qty = row.FixedStock;
+            }
+            else
+            {
+                qty = row.RawStock;
+                if (qty < 0 && _config.Sync.SendNegativeStockAsZero) qty = 0;
+            }
+
+            decimal sellingPrice  = row.FixedRate > 0 ? row.FixedRate : row.SellingPrice;
+            decimal originalPrice = row.FixedMrp  > 0 ? row.FixedMrp  : row.OriginalPrice;
+
             // NOTE: item_name is NOT validated or sent — the customer maintains product
             // names in the online store; the sync must not overwrite them.
+            // Validation runs on the RESOLVED values (after fixed overrides).
             string? reason =
                 string.IsNullOrWhiteSpace(row.ErpId)  ? "missing item_code" :
-                row.SellingPrice <= 0                 ? $"selling_price {row.SellingPrice} <= 0" :
-                row.OriginalPrice < 0                 ? $"original_price {row.OriginalPrice} < 0" :
+                sellingPrice <= 0                     ? $"selling_price {sellingPrice} <= 0" :
+                originalPrice < 0                     ? $"original_price {originalPrice} < 0" :
                 null;
 
             if (reason != null)
@@ -238,8 +258,11 @@ public sealed class SyncRunner
                 continue;
             }
 
-            decimal qty = row.RawStock;
-            if (qty < 0 && _config.Sync.SendNegativeStockAsZero) qty = 0;
+            if (row.FixedStock > 0 || row.FixedRate > 0 || row.FixedMrp > 0)
+                _log.Info($"erp_id={row.ErpId}: fixed override applied " +
+                          $"(stock={(row.FixedStock > 0 ? row.FixedStock.ToString() : "live")}, " +
+                          $"rate={(row.FixedRate > 0 ? row.FixedRate.ToString() : "live")}, " +
+                          $"mrp={(row.FixedMrp > 0 ? row.FixedMrp.ToString() : "live")}).");
 
             byErpId[row.ErpId] = row;
             products.Add(new ZepioProductDto
@@ -247,8 +270,8 @@ public sealed class SyncRunner
                 ErpId         = row.ErpId,
                 TrackQuantity = true,
                 UnitQuantity  = qty,
-                SellingPrice  = row.SellingPrice,
-                OriginalPrice = row.OriginalPrice,
+                SellingPrice  = sellingPrice,
+                OriginalPrice = originalPrice,
                 IsActive      = row.IsActive,
             });
         }

@@ -24,6 +24,12 @@ Standalone console utility that syncs the legacy ERP's online-store item selecti
 Field mapping: `erp_id`=`item_code`, `track_quantity`=true,
 `unit_quantity`=stock, `selling_price`=`retail_rate`, `original_price`=`mrp`,
 `is_active`=`active`.
+
+**Per-item fixed overrides** (from `fa_ol_items`): for items whose online figure should
+stay steady (vegetables, ready-to-cook, etc.), set a value in `fixed_stock`, `fixed_rate`,
+or `fixed_mrp`. Any of these that is **> 0 wins** over the live value —
+`fixed_stock`→`unit_quantity`, `fixed_rate`→`selling_price`, `fixed_mrp`→`original_price`.
+Leave a column at **0** to use the live/calculated value. The three are independent.
 **`name` is deliberately NOT sent** — the customer maintains product names in the
 online store, and Zepio only updates fields present in the payload.
 

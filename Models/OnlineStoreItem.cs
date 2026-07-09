@@ -32,4 +32,17 @@ public sealed class OnlineStoreItem
 
     /// <summary>fa_item_codes.active → Zepio is_active.</summary>
     public bool IsActive { get; set; }
+
+    // ── Per-item overrides from fa_ol_items (money NOT NULL; 0 = "not fixed") ──
+    // Some items (vegetables, ready-to-cook) should show a fixed value online
+    // instead of the fluctuating live figure. When > 0 these WIN over the live values.
+
+    /// <summary>fa_ol_items.fixed_stock — when &gt; 0, overrides live stock for unit_quantity.</summary>
+    public decimal FixedStock { get; set; }
+
+    /// <summary>fa_ol_items.fixed_rate — when &gt; 0, overrides retail_rate for selling_price.</summary>
+    public decimal FixedRate { get; set; }
+
+    /// <summary>fa_ol_items.fixed_mrp — when &gt; 0, overrides mrp for original_price.</summary>
+    public decimal FixedMrp { get; set; }
 }

@@ -98,7 +98,10 @@ public sealed class LegacyItemReader
                   - ISNULL(im.issue_quantity, 0)        AS raw_stock,
                 ic.retail_rate                          AS selling_price,
                 ic.mrp                                  AS original_price,
-                ic.active                               AS is_active
+                ic.active                               AS is_active,
+                ISNULL(oi.fixed_stock, 0)               AS fixed_stock,
+                ISNULL(oi.fixed_rate,  0)               AS fixed_rate,
+                ISNULL(oi.fixed_mrp,   0)               AS fixed_mrp
             FROM dbo.fa_ol_items oi
             -- Join by item_code STRING, not item_no: in real legacy databases the app
             -- populates fa_ol_items.item_code and leaves item_no at its newid() default,
@@ -134,6 +137,9 @@ public sealed class LegacyItemReader
                 SellingPrice  = reader.GetDecimal(5),
                 OriginalPrice = reader.GetDecimal(6),
                 IsActive      = reader.GetBoolean(7),
+                FixedStock    = reader.GetDecimal(8),
+                FixedRate     = reader.GetDecimal(9),
+                FixedMrp      = reader.GetDecimal(10),
             });
         }
 
