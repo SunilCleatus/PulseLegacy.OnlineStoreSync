@@ -22,6 +22,47 @@ public sealed class LegacyItemReader
     public LegacyItemReader(string connectionString)
         => _connectionString = connectionString;
 
+    /// <summary>
+    /// Resolves the current accounting period from fa_periods without needing config:
+    ///   1. the period whose date range contains today (period_from ≤ today ≤ period_to),
+    ///      preferring a row whose period_status = 'Open';
+    ///   2. failing that, the latest 'Open' period.
+    /// period_to is treated as inclusive of its whole last day. company_code is ignored
+    /// (single-company database). Returns null when nothing matches.
+    /// </summary>
+    public async Task<int?> GetCurrentPeriodIdAsync()
+    {
+        const string sql = @"
+            DECLARE @Now datetime = GETDATE();
+
+            SELECT TOP 1 period_id
+            FROM dbo.fa_periods
+            WHERE @Now >= period_from AND @Now < DATEADD(DAY, 1, period_to)
+            ORDER BY CASE WHEN period_status = 'Open' THEN 0 ELSE 1 END, period_from DESC;";
+
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+
+        await using (var cmd = new SqlCommand(sql, conn))
+        {
+            var byDate = await cmd.ExecuteScalarAsync();
+            if (byDate != null && byDate != DBNull.Value)
+                return Convert.ToInt32(byDate);
+        }
+
+        // Fallback: no period covers today (e.g. next year's period not created yet) —
+        // use the latest still-open period.
+        const string openSql = @"
+            SELECT TOP 1 period_id
+            FROM dbo.fa_periods
+            WHERE period_status = 'Open'
+            ORDER BY period_from DESC;";
+
+        await using var openCmd = new SqlCommand(openSql, conn);
+        var byStatus = await openCmd.ExecuteScalarAsync();
+        return (byStatus != null && byStatus != DBNull.Value) ? Convert.ToInt32(byStatus) : (int?)null;
+    }
+
     /// <summary>Returns the default godown, or null when none is flagged.</summary>
     public async Task<(Guid GodownCode, string GodownName)?> GetDefaultGodownAsync()
     {

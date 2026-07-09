@@ -45,6 +45,15 @@ public sealed class AppConfig
 
     public sealed class SyncSection
     {
+        /// <summary>
+        /// When true (default), the current period is detected from fa_periods
+        /// (the row whose date range contains today / status = 'Open'), so
+        /// appsettings.json never needs editing at year-end. When false, PeriodId
+        /// below is used. PeriodId also serves as the fallback if auto-detect finds nothing.
+        /// </summary>
+        [JsonPropertyName("AutoDetectPeriod")]
+        public bool AutoDetectPeriod { get; set; } = true;
+
         [JsonPropertyName("PeriodId")]
         public int PeriodId { get; set; }
 
@@ -89,8 +98,10 @@ public sealed class AppConfig
             errors.Add("Zepio:BatchSize must be between 1 and 100 (Zepio allows max 100 products per request).");
         if (Zepio.TimeoutSeconds < 5)
             errors.Add("Zepio:TimeoutSeconds must be at least 5.");
-        if (Sync.PeriodId <= 0)
-            errors.Add("Sync:PeriodId is required (e.g. 202627).");
+        // PeriodId is required only when auto-detect is off (otherwise it's just an
+        // optional fallback and may be 0).
+        if (!Sync.AutoDetectPeriod && Sync.PeriodId <= 0)
+            errors.Add("Sync:PeriodId is required when Sync:AutoDetectPeriod is false.");
 
         // In DryRun mode a placeholder API key is acceptable — no API call is made.
         if (Sync.DryRun)

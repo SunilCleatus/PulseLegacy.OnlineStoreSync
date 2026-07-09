@@ -31,8 +31,11 @@ public sealed class SyncRunner
     public async Task<int> RunAsync()
     {
         _log.Info("──────────────────────────────────────────────────");
+        string periodMode = _config.Sync.AutoDetectPeriod
+            ? $"auto (fallback {_config.Sync.PeriodId})"
+            : $"configured {_config.Sync.PeriodId}";
         _log.Info($"Sync started. DryRun={_config.Sync.DryRun}, " +
-                  $"PeriodId={_config.Sync.PeriodId}, BranchId={_config.Zepio.BranchId}, " +
+                  $"Period={periodMode}, BranchId={_config.Zepio.BranchId}, " +
                   $"ApiKey={_config.MaskedApiKey}");
         LogConnectionTarget();
 
@@ -47,9 +50,38 @@ public sealed class SyncRunner
         }
         _log.Info($"Default godown: {godown.Value.GodownName} ({godown.Value.GodownCode})");
 
+        // 1b. Resolve the accounting period ───────────────────────────────────
+        int periodId;
+        if (_config.Sync.AutoDetectPeriod)
+        {
+            var detected = await reader.GetCurrentPeriodIdAsync();
+            if (detected.HasValue)
+            {
+                periodId = detected.Value;
+                _log.Info($"Auto-detected current period from fa_periods: {periodId}.");
+            }
+            else if (_config.Sync.PeriodId > 0)
+            {
+                periodId = _config.Sync.PeriodId;
+                _log.Warn($"Could not auto-detect a current period from fa_periods; " +
+                          $"falling back to configured PeriodId {periodId}.");
+            }
+            else
+            {
+                _log.Error("Could not auto-detect a current period from fa_periods and no " +
+                           "fallback Sync:PeriodId is configured. Cannot continue.");
+                return 1;
+            }
+        }
+        else
+        {
+            periodId = _config.Sync.PeriodId;
+            _log.Info($"Using configured PeriodId {periodId} (auto-detect disabled).");
+        }
+
         // 2. Read ALL selected online items (fa_ol_items) ─────────────────────
-        var rows = await reader.ReadItemsAsync(godown.Value.GodownCode, _config.Sync.PeriodId);
-        _log.Info($"fa_ol_items rows read: {rows.Count} (period {_config.Sync.PeriodId})");
+        var rows = await reader.ReadItemsAsync(godown.Value.GodownCode, periodId);
+        _log.Info($"fa_ol_items rows read: {rows.Count} (period {periodId})");
 
         if (rows.Count == 0)
         {
@@ -69,6 +101,9 @@ public sealed class SyncRunner
         var batches = Chunk(products, _config.Zepio.BatchSize);
         _log.Info($"Products to send: {products.Count} in {batches.Count} batch(es) " +
                   $"of up to {_config.Zepio.BatchSize}.");
+
+        // Archive the EXACT payload (incl. unit_quantity) for diagnostics — newest 3 kept.
+        SaveRequestArchive(batches);
 
         // 5. DryRun: log what would be sent, then stop ────────────────────────
         if (_config.Sync.DryRun)
@@ -232,6 +267,30 @@ public sealed class SyncRunner
         for (int i = 0; i < source.Count; i += size)
             result.Add(source.GetRange(i, Math.Min(size, source.Count - i)));
         return result;
+    }
+
+    /// <summary>
+    /// Writes the exact request bodies for this run to Logs/request-*.json (newest 3 kept).
+    /// `requests[]` elements are the precise POST bodies sent to Zepio — including
+    /// unit_quantity — so we can confirm what the store received.
+    /// </summary>
+    private void SaveRequestArchive(List<List<ZepioProductDto>> batches)
+    {
+        var snapshot = new
+        {
+            generatedOn   = DateTimeOffset.Now,
+            dryRun        = _config.Sync.DryRun,
+            branchId      = _config.Zepio.BranchId,
+            totalProducts = batches.Sum(b => b.Count),
+            batchCount    = batches.Count,
+            requests      = batches.Select(b => new ZepioProductUpdateRequest
+            {
+                BranchId = _config.Zepio.BranchId,
+                Products = b,
+            }),
+        };
+        _log.SaveRequestSnapshot(JsonSerializer.Serialize(
+            snapshot, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private void LogDryRun(List<List<ZepioProductDto>> batches)
