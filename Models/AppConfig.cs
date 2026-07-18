@@ -37,7 +37,7 @@ public sealed class AppConfig
         public int BranchId { get; set; } = 1;
 
         [JsonPropertyName("BatchSize")]
-        public int BatchSize { get; set; } = 100;
+        public int BatchSize { get; set; } = 2000;
 
         [JsonPropertyName("TimeoutSeconds")]
         public int TimeoutSeconds { get; set; } = 60;
@@ -94,8 +94,8 @@ public sealed class AppConfig
             errors.Add("Zepio:Endpoint is required.");
         if (string.IsNullOrWhiteSpace(Zepio.ApiKey) || Zepio.ApiKey == "PUT_API_KEY_HERE")
             errors.Add("Zepio:ApiKey is not set. Edit appsettings.json and enter the API key.");
-        if (Zepio.BatchSize < 1 || Zepio.BatchSize > 100)
-            errors.Add("Zepio:BatchSize must be between 1 and 100 (Zepio allows max 100 products per request).");
+        if (Zepio.BatchSize < 1 || Zepio.BatchSize > 2000)
+            errors.Add("Zepio:BatchSize must be between 1 and 2000 (Zepio allows max 100 products per request).");
         if (Zepio.TimeoutSeconds < 5)
             errors.Add("Zepio:TimeoutSeconds must be at least 5.");
         // PeriodId is required only when auto-detect is off (otherwise it's just an

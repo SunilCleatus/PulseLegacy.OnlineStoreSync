@@ -44,7 +44,7 @@ online store, and Zepio only updates fields present in the payload.
     "Endpoint": "https://soorya.zepio.io/api/developer/v1/products/bulk-update",
     "ApiKey": "PUT_API_KEY_HERE",
     "BranchId": 1,
-    "BatchSize": 100,
+    "BatchSize": 2000,
     "TimeoutSeconds": 60
   },
   "Sync": {
