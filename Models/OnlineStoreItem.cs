@@ -6,43 +6,43 @@ namespace PulseLegacy.OnlineStoreSync.Models;
 /// </summary>
 public sealed class OnlineStoreItem
 {
-    /// <summary>fa_ol_items.id — used to write back uploaded_* after a successful sync.</summary>
+    /// <summary>fa_ol_items.id — used to write back upload state after a successful sync.</summary>
     public int OlItemId { get; set; }
 
     public Guid ItemNo { get; set; }
 
-    /// <summary>fa_item_codes.item_code → Zepio erp_id.</summary>
+    /// <summary>fa_item_codes.item_code -> external ERP/item identifier.</summary>
     public string ErpId { get; set; } = string.Empty;
 
-    /// <summary>fa_item_codes.item_name → Zepio name.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
     /// Raw stock for the default godown and configured period:
     /// opening_quantity + receipt_quantity - issue_quantity.
-    /// May be negative; clamping to zero is applied per configuration.
     /// </summary>
     public decimal RawStock { get; set; }
 
-    /// <summary>fa_item_codes.retail_rate → Zepio selling_price.</summary>
     public decimal SellingPrice { get; set; }
 
-    /// <summary>fa_item_codes.mrp → Zepio original_price.</summary>
     public decimal OriginalPrice { get; set; }
 
-    /// <summary>fa_item_codes.active → Zepio is_active.</summary>
     public bool IsActive { get; set; }
 
-    // ── Per-item overrides from fa_ol_items (money NOT NULL; 0 = "not fixed") ──
-    // Some items (vegetables, ready-to-cook) should show a fixed value online
-    // instead of the fluctuating live figure. When > 0 these WIN over the live values.
-
-    /// <summary>fa_ol_items.fixed_stock — when &gt; 0, overrides live stock for unit_quantity.</summary>
     public decimal FixedStock { get; set; }
 
-    /// <summary>fa_ol_items.fixed_rate — when &gt; 0, overrides retail_rate for selling_price.</summary>
     public decimal FixedRate { get; set; }
 
-    /// <summary>fa_ol_items.fixed_mrp — when &gt; 0, overrides mrp for original_price.</summary>
     public decimal FixedMrp { get; set; }
+
+    public decimal? AdvancedPrice { get; set; }
+
+    /// <summary>Resolved stock after overrides and negative-stock handling.</summary>
+    public decimal ResolvedStock { get; set; }
+
+    /// <summary>Resolved rate after overrides.</summary>
+    public decimal ResolvedRate { get; set; }
+
+    /// <summary>Resolved MRP after overrides.</summary>
+    public decimal ResolvedMrp { get; set; }
+
 }

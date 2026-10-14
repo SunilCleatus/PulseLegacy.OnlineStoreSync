@@ -3,6 +3,7 @@ obj/
 Logs/*.log
 publish/
 *.user
+.vs/
 
 # Never commit real credentials — deploy appsettings.json manually per client.
 # The template with placeholders IS committed; uncomment the next line if this

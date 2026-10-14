@@ -3,18 +3,6 @@ using PulseLegacy.OnlineStoreSync.Models;
 
 namespace PulseLegacy.OnlineStoreSync.Services;
 
-/// <summary>
-/// Reads the online-store item selection from the legacy ERP database.
-///
-/// Sources:
-///   fa_godown_master — default_godown = 1 identifies the stock godown.
-///   fa_ol_items      — the selection table: ONLY items present here are sent,
-///                      and ALL of them are sent on every run (customer requirement —
-///                      no changed-only filtering).
-///   fa_item_codes    — item details (item_code, item_name, retail_rate, mrp, active).
-///   fa_item_master   — stock per (item_no, godown_code, period_id):
-///                      opening_quantity + receipt_quantity - issue_quantity.
-/// </summary>
 public sealed class LegacyItemReader
 {
     private readonly string _connectionString;
@@ -22,14 +10,6 @@ public sealed class LegacyItemReader
     public LegacyItemReader(string connectionString)
         => _connectionString = connectionString;
 
-    /// <summary>
-    /// Resolves the current accounting period from fa_periods without needing config:
-    ///   1. the period whose date range contains today (period_from ≤ today ≤ period_to),
-    ///      preferring a row whose period_status = 'Open';
-    ///   2. failing that, the latest 'Open' period.
-    /// period_to is treated as inclusive of its whole last day. company_code is ignored
-    /// (single-company database). Returns null when nothing matches.
-    /// </summary>
     public async Task<int?> GetCurrentPeriodIdAsync()
     {
         const string sql = @"
@@ -50,8 +30,6 @@ public sealed class LegacyItemReader
                 return Convert.ToInt32(byDate);
         }
 
-        // Fallback: no period covers today (e.g. next year's period not created yet) —
-        // use the latest still-open period.
         const string openSql = @"
             SELECT TOP 1 period_id
             FROM dbo.fa_periods
@@ -63,7 +41,6 @@ public sealed class LegacyItemReader
         return (byStatus != null && byStatus != DBNull.Value) ? Convert.ToInt32(byStatus) : (int?)null;
     }
 
-    /// <summary>Returns the default godown, or null when none is flagged.</summary>
     public async Task<(Guid GodownCode, string GodownName)?> GetDefaultGodownAsync()
     {
         const string sql = @"
@@ -80,11 +57,6 @@ public sealed class LegacyItemReader
         return (reader.GetGuid(0), reader.IsDBNull(1) ? "(unnamed)" : reader.GetString(1));
     }
 
-    /// <summary>
-    /// Reads all fa_ol_items rows with their item details and raw stock for the
-    /// given godown/period. The raw (possibly negative) stock is returned;
-    /// zero-clamping is a configuration decision applied by the caller.
-    /// </summary>
     public async Task<List<OnlineStoreItem>> ReadItemsAsync(Guid defaultGodown, int periodId)
     {
         const string sql = @"
@@ -96,16 +68,13 @@ public sealed class LegacyItemReader
                 ISNULL(im.opening_quantity, 0)
                   + ISNULL(im.receipt_quantity, 0)
                   - ISNULL(im.issue_quantity, 0)        AS raw_stock,
-                ic.retail_rate                          AS selling_price,
+                ic.retail_rate                         AS selling_price,
                 ic.mrp                                  AS original_price,
                 ic.active                               AS is_active,
                 ISNULL(oi.fixed_stock, 0)               AS fixed_stock,
                 ISNULL(oi.fixed_rate,  0)               AS fixed_rate,
                 ISNULL(oi.fixed_mrp,   0)               AS fixed_mrp
             FROM dbo.fa_ol_items oi
-            -- Join by item_code STRING, not item_no: in real legacy databases the app
-            -- populates fa_ol_items.item_code and leaves item_no at its newid() default,
-            -- so a GUID join matches nothing (verified: 0 vs 1152 rows on dmbzr2627).
             INNER JOIN dbo.fa_item_codes ic
                 ON ic.item_code = oi.item_code
             LEFT JOIN dbo.fa_item_master im
@@ -129,28 +98,100 @@ public sealed class LegacyItemReader
         {
             items.Add(new OnlineStoreItem
             {
-                OlItemId      = reader.GetInt32(0),
-                ItemNo        = reader.GetGuid(1),
-                ErpId         = reader.GetString(2).Trim(),
-                Name          = reader.IsDBNull(3) ? string.Empty : reader.GetString(3).Trim(),
-                RawStock      = reader.GetDecimal(4),
-                SellingPrice  = reader.GetDecimal(5),
+                OlItemId = reader.GetInt32(0),
+                ItemNo = reader.GetGuid(1),
+                ErpId = reader.GetString(2).Trim(),
+                Name = reader.IsDBNull(3) ? string.Empty : reader.GetString(3).Trim(),
+                RawStock = reader.GetDecimal(4),
+                SellingPrice = reader.GetDecimal(5),
                 OriginalPrice = reader.GetDecimal(6),
-                IsActive      = reader.GetBoolean(7),
-                FixedStock    = reader.GetDecimal(8),
-                FixedRate     = reader.GetDecimal(9),
-                FixedMrp      = reader.GetDecimal(10),
+                IsActive = reader.GetBoolean(7),
+                FixedStock = reader.GetDecimal(8),
+                FixedRate = reader.GetDecimal(9),
+                FixedMrp = reader.GetDecimal(10),
             });
         }
 
         return items;
     }
 
-    /// <summary>
-    /// Marks successfully-synced rows in fa_ol_items with the values that were
-    /// actually SENT (uploaded_stock / uploaded_mrp / uploaded_rate, updatedon).
-    /// One UPDATE per row, single connection; ids come from fa_ol_items.id.
-    /// </summary>
+    public async Task<List<OnlineStoreItem>> ReadItemsForAnugrahaAsync(Guid defaultGodown, int periodId)
+    {
+        const string sql = """
+;WITH sch AS (
+    SELECT
+        s.item_no,
+        CASE
+            WHEN s.min_amount > 0 OR s.max_amount > 0 THEN 0
+            WHEN s.retail_rate2 > 0 THEN i.MRP - s.retail_rate2
+            WHEN s.SchemeRate > 0 THEN s.SchemeRate
+            WHEN s.retail_rate3 > 0 THEN i.MRP - ((i.MRP * s.retail_rate3) / 100.0)
+            ELSE NULL
+        END AS AdvancedPrice,
+        ROW_NUMBER() OVER(PARTITION BY s.item_no ORDER BY s.createddate DESC, s.vid DESC) rn
+    FROM dbo.fa_scheme_1 s
+    JOIN dbo.fa_item_codes i ON i.item_no = s.item_no
+    WHERE s.Active = 1
+      AND CONVERT(date,GETDATE()) BETWEEN CONVERT(date,s.from_date) AND CONVERT(date,s.to_date)
+)
+SELECT
+    oi.id AS ol_item_id,
+    ic.item_no,
+    ic.item_code AS erp_id,
+    ic.item_name AS name,
+    ISNULL(im.opening_quantity,0)+ISNULL(im.receipt_quantity,0)-ISNULL(im.issue_quantity,0) AS raw_stock,
+    ic.retail_rate1 AS selling_price,
+    ic.mrp AS original_price,
+    ic.active AS is_active,
+    ISNULL(oi.fixed_stock,0) AS fixed_stock,
+    ISNULL(oi.fixed_rate,0) AS fixed_rate,
+    ISNULL(oi.fixed_mrp,0) AS fixed_mrp,
+    sch.AdvancedPrice
+FROM dbo.fa_ol_items oi
+JOIN dbo.fa_item_codes ic ON ic.item_code=oi.item_code
+LEFT JOIN dbo.fa_item_master im
+    ON im.item_no=ic.item_no
+   AND im.godown_code=@DefaultGodown
+   AND im.period_id=@PeriodId
+LEFT JOIN sch
+    ON sch.item_no=ic.item_no
+   AND sch.rn=1
+WHERE ic.item_code IS NOT NULL
+  AND LTRIM(RTRIM(ic.item_code))<>''
+ORDER BY ic.item_code;
+""";
+
+        var items = new List<OnlineStoreItem>();
+
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@DefaultGodown", defaultGodown);
+        cmd.Parameters.AddWithValue("@PeriodId", periodId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(new OnlineStoreItem
+            {
+                OlItemId = reader.GetInt32(0),
+                ItemNo = reader.GetGuid(1),
+                ErpId = reader.GetString(2).Trim(),
+                Name = reader.IsDBNull(3) ? string.Empty : reader.GetString(3).Trim(),
+                RawStock = reader.GetDecimal(4),
+                SellingPrice = reader.GetDecimal(5),
+                OriginalPrice = reader.GetDecimal(6),
+                IsActive = reader.GetBoolean(7),
+                FixedStock = reader.GetDecimal(8),
+                FixedRate = reader.GetDecimal(9),
+                FixedMrp = reader.GetDecimal(10),
+                AdvancedPrice = reader.IsDBNull(11) ? null : reader.GetDecimal(11),
+            });
+        }
+
+        return items;
+    }
+
     public async Task<int> MarkUploadedAsync(
         IEnumerable<(int OlItemId, decimal SentQty, decimal SentMrp, decimal SentRate)> rows)
     {
@@ -169,10 +210,10 @@ public sealed class LegacyItemReader
         foreach (var row in rows)
         {
             await using var cmd = new SqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("@Qty",  row.SentQty);
-            cmd.Parameters.AddWithValue("@Mrp",  row.SentMrp);
+            cmd.Parameters.AddWithValue("@Qty", row.SentQty);
+            cmd.Parameters.AddWithValue("@Mrp", row.SentMrp);
             cmd.Parameters.AddWithValue("@Rate", row.SentRate);
-            cmd.Parameters.AddWithValue("@Id",   row.OlItemId);
+            cmd.Parameters.AddWithValue("@Id", row.OlItemId);
             updated += await cmd.ExecuteNonQueryAsync();
         }
 
